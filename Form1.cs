@@ -21,77 +21,100 @@ namespace MySQL2SQLite
         public Form1()
         {
             InitializeComponent();
+            lblTable.Visible = false;
+            progTables.Visible = false;
+            progDB.Visible = false;
         }
 
         private void button1_Click(object sender, EventArgs e)
         {
-            string host = "localhost";
-            string user = "root";
-            string pass = "";
-            string dbname = "ace_world";
-            string connect = $"server={host};database={dbname};uid={user};pwd={pass}";
-            link = new MySqlConnection(connect);
-            try
+            saveDlgSQLite.Title = "Create SQLite Database...";
+            saveDlgSQLite.InitialDirectory = System.AppDomain.CurrentDomain.BaseDirectory;
+            saveDlgSQLite.ShowDialog();
+
+            if (saveDlgSQLite.FileName != "")
             {
-                link.Open();
-                //MessageBox.Show("Connected");
-                string query = "show tables";
-                SetUpSQLiteDB(dbname);
-                List<string> tables = new List<string>();
-                using (MySqlCommand cmd = new MySqlCommand(query))
+                /*
+                string host = "localhost";
+                string user = "root";
+                string pass = "";
+                string dbname = "ace_world_pcap";
+                */
+                string host = txtHost.Text;
+                string user = txtUsername.Text;
+                string pass = txtPassword.Text;
+                string dbname = txtDatabase.Text;
+
+                string connect = $"server={host};database={dbname};uid={user};pwd={pass}";
+                link = new MySqlConnection(connect);
+                try
                 {
-                    cmd.Connection = link;
-                    using (MySqlDataReader sdr = cmd.ExecuteReader())
+                    link.Open();
+                    //MessageBox.Show("Connected");
+                    string query = "show tables";
+                    SetUpSQLiteDB(saveDlgSQLite.FileName);
+                    List<string> tables = new List<string>();
+                    using (MySqlCommand cmd = new MySqlCommand(query))
                     {
-                        while (sdr.Read())
+                        cmd.Connection = link;
+                        using (MySqlDataReader sdr = cmd.ExecuteReader())
                         {
-                            tables.Add(sdr.GetString(0));
+                            while (sdr.Read())
+                            {
+                                tables.Add(sdr.GetString(0));
+                            }
                         }
                     }
+
+                    // For testing...
+                    //tables.Clear();
+                    //tables.Add("weenie_properties_string");
+
+                    // Set up the Progress Bar...
+                    progDB.Maximum = tables.Count;
+                    progDB.Step = 1;
+                    progDB.Value = 0;
+                    progDB.Visible = true;
+
+                    foreach (var t in tables)
+                    {
+                        try
+                        {
+                            if (!t.StartsWith("_") && !t.StartsWith("ace_content"))
+                            {
+                                DumpTable(t);
+                            }
+                            progDB.PerformStep();
+                            //MessageBox.Show("Done with " + t);
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show("Error with " + t + "\n" + ex.Message);
+                        }
+                    }
+                    link.Close();
+
+                    lblTable.Visible = false;
+                    progDB.Visible = false;
+                    progTables.Visible = false;
+                    MessageBox.Show("Done!");
                 }
-
-                // For testing...
-                //tables.Clear();
-                //tables.Add("weenie_properties_string");
-
-                // Set up the Progress Bar...
-                progDB.Maximum = tables.Count;
-                progDB.Step = 1;
-                progDB.Value = 0;
-
-                foreach (var t in tables)
+                catch (Exception ex)
                 {
-                    try
-                    {
-                        //if (t.Contains("weenie") || t.Contains("version")) { 
-                            DumpTable(t);
-                        //}
-                        progDB.PerformStep();
-                        //MessageBox.Show("Done with " + t);
-                    }
-                    catch (Exception ex)
-                    {
-                        MessageBox.Show("Error with " + t + "\n" + ex.Message);
-                    }
+                    MessageBox.Show(ex.Message + "\n" + "Could not connect to database.");
                 }
-                link.Close();
-                MessageBox.Show("Done!");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show(ex.Message + "\n" + "Could not connect to database.");
             }
         }
 
         private void SetUpSQLiteDB(string dbName)
         {
-            string filename = Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, $"{dbName}.db");
+            string filename = dbName;
             if (File.Exists(filename))
             {
                 File.Delete(filename);
             }
 
-            sqlite = new SQLiteConnection("Data Source=" + dbName + ".db");
+            sqlite = new SQLiteConnection("Data Source=" + dbName);
             sqlite.Open();
         }
 
@@ -116,8 +139,10 @@ namespace MySQL2SQLite
             progTables.Step = 1;
             progTables.Value = 0;
             progTables.Maximum = 100;
+            progTables.Visible = true;
             var TotalRows = GetRowCount(table);
             lblTable.Text = $"Processing `{table}` with {TotalRows:N0} rows...";
+            lblTable.Visible = true;
             this.Refresh();
 
             Dictionary<string, string> Fields = new Dictionary<string, string>();
@@ -157,6 +182,7 @@ namespace MySQL2SQLite
                             // This is how MySQL connector treats the bit() types (also true bigint)
                             case "UInt64": CreateTable += " bigint unsigned"; break;
                             case "Int64": CreateTable += " bigint"; break;
+                            case "Boolean": CreateTable += "tinyint"; break;
                             default:
                                 var UNHANDLED = col.DataType.Name;
                                 break;
@@ -234,8 +260,8 @@ namespace MySQL2SQLite
             double percDone = ((double)current / (double)total) * 100.0;
             if (percDone > progTables.Value)
             {
-               // while (progTables.Value < percDone)
-                    progTables.PerformStep();
+                // while (progTables.Value < percDone)
+                progTables.PerformStep();
             }
         }
 
